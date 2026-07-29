@@ -1,5 +1,7 @@
 import re
 from django.core.exceptions import ValidationError
+from .choicefields import OrgRoleTypeChoice
+from croploraApp.models import OrgRole
 
 
 def validate_password_strength(password):
@@ -33,3 +35,27 @@ def validate_password_strength(password):
         raise ValidationError(error_message)
 
     return password
+
+DEFAULT_ORG_ROLES = [
+    (OrgRoleTypeChoice.OWNER, "Organization Owner", True),
+    (OrgRoleTypeChoice.ADMIN, "Admin", True),
+    (OrgRoleTypeChoice.WORKER, "Worker", True),
+]
+
+
+def create_default_org_roles(organization):
+    roles = {}
+    for role_type, role_name, is_default in DEFAULT_ORG_ROLES:
+        role, _ = OrgRole.objects.get_or_create(
+            organization=organization,
+            role_type=role_type,
+            defaults={
+                "role_name": role_name,
+                "is_default": is_default,
+            },
+        )
+        roles[role_type] = role
+    return roles
+
+
+

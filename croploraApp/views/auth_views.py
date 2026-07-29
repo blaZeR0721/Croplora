@@ -1,8 +1,8 @@
 from typing import Dict, Type
 
 from croploraApp.serializers.auth_serializers import (
-    RegisterSerializer, ResendVerificationCodeSerializer,
-    UserProfileSerializer, VerifyEmailSerializer, LoginSerializer)
+    LoginSerializer, RegisterSerializer, ResendVerificationCodeSerializer,
+    UserProfileSerializer, VerifyEmailSerializer)
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -11,7 +11,8 @@ from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .utils.verification import generate_and_send_verification_code,onboarding_pending,verification_pending
+from .utils.verification import (generate_and_send_verification_code,
+                                 onboarding_pending, verification_pending)
 
 
 class AuthViewSet(viewsets.GenericViewSet):
@@ -25,7 +26,7 @@ class AuthViewSet(viewsets.GenericViewSet):
         "sign_up": RegisterSerializer,
         "verify_email": VerifyEmailSerializer,
         "resend_verification": ResendVerificationCodeSerializer,
-        "sign-in":LoginSerializer
+        "sign-in": LoginSerializer,
     }
 
     def get_permissions(self):

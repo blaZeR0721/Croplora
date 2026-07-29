@@ -1,8 +1,9 @@
-import random
 import logging
+import random
+
+from croploraApp.views.utils.redis_client import redis_client
 from django.conf import settings
 from django.core.mail import send_mail
-from croploraApp.views.utils.redis_client import redis_client
 
 logger = logging.getLogger("croplora")
 
@@ -12,13 +13,12 @@ RESEND_WINDOW_SECONDS = 600
 
 
 def verification_pending(user):
-    if not settings.REQUIRE_EMAIL_VERIFICATION:
-        return False
     return not user.is_verified
 
 
 def onboarding_pending(user):
     return user.organization_id is None
+
 
 def generate_and_send_verification_code(user):
     code = str(random.randint(100000, 999999))

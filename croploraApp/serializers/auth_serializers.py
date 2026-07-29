@@ -1,17 +1,17 @@
 import logging
 import re
 
-from croploraApp.models import PlatformRole, User
+from croploraApp.models import PlatformRole, User, OrgRole
 from croploraApp.views.utils.helpers import validate_password_strength
 from croploraApp.views.utils.redis_client import redis_client
 from croploraApp.views.utils.verification import (
     check_resend_allowed, generate_and_send_verification_code)
+from django.contrib.auth import authenticate
 from django.core.exceptions import ValidationError
+from croploraApp.views.utils.choicefields import PlatRoleTypeChoice
 from django.core.validators import validate_email
 from django.utils import timezone
 from rest_framework import serializers
-
-from django.contrib.auth import authenticate
 
 logger = logging.getLogger("croplora")
 
@@ -86,9 +86,9 @@ class RegisterSerializer(serializers.ModelSerializer):
         last_name = validated_data.pop("last_name")
 
         try:
-            normal_role = PlatformRole.objects.get(role_code="NORMAL_USER")
+            plat_role = PlatformRole.objects.get(role_code=PlatRoleTypeChoice.NORMAL_USER)
         except PlatformRole.DoesNotExist:
-            normal_role = None
+            raise ValidationError("Issue in getting roles")
         try:
             user = User.objects.create_user(
                 email=email,
@@ -97,8 +97,7 @@ class RegisterSerializer(serializers.ModelSerializer):
                 last_name=last_name,
                 is_verified=False,
                 organization=None,
-                org_role=None,
-                platform_role=normal_role,
+                platform_role=plat_role,
             )
 
         except Exception as e:
@@ -106,7 +105,8 @@ class RegisterSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"error": "Failed to create user"})
 
         return user
-    
+
+
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
     password = serializers.CharField(
@@ -123,9 +123,7 @@ class LoginSerializer(serializers.Serializer):
             if User.objects.filter(email__iexact=email).exists():
                 u = User.objects.filter(email__iexact=email).first()
                 if not u.is_active:
-                    raise serializers.ValidationError(
-                        {"error": "Account is disabled."}
-                    )
+                    raise serializers.ValidationError({"error": "Account is disabled."})
                 raise serializers.ValidationError({"password": "Incorrect password."})
             raise serializers.ValidationError(
                 {"email": "No account found with this email address."}
@@ -136,6 +134,7 @@ class LoginSerializer(serializers.Serializer):
 
         attrs["user"] = user
         return attrs
+
 
 class VerifyEmailSerializer(serializers.Serializer):
     code = serializers.CharField(required=True, max_length=6)

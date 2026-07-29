@@ -1,12 +1,13 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
+from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 from django.utils.text import slugify
-from django.db import IntegrityError
 
-
-from .views.utils.choicefields import InvitationStatusChoice, OrgRoleTypeChoice
+from .views.utils.choicefields import (AddressSourceChoice,
+                                       InvitationStatusChoice,
+                                       OrgRoleTypeChoice, PlatRoleTypeChoice)
 from .views.utils.tokenGen import generateRandomCode, generateRandomNumericCode
 
 
@@ -25,8 +26,8 @@ class PlatformRole(models.Model):
     role_name = models.CharField(max_length=50)
     role_code = models.CharField(
         max_length=20,
+        choices=PlatRoleTypeChoice.choices,
         unique=True,
-        help_text="e.g. SUPER_ADMIN, NORMAL_USER",
     )
     role_description = models.TextField(blank=True, null=True)
     is_system_role = models.BooleanField(
@@ -44,6 +45,30 @@ class PlatformRole(models.Model):
         return f"{self.role_name} ({self.role_code})"
 
 
+class OrgRole(models.Model):
+    id = models.BigAutoField(primary_key=True)
+
+    role_name = models.CharField(max_length=50, unique=True)
+    role_code = models.CharField(
+        max_length=20,
+        choices=OrgRoleTypeChoice.choices,
+        unique=True,
+    )
+
+    role_description = models.TextField(blank=True, null=True)
+
+    is_system_role = models.BooleanField(
+        default=True,
+        help_text="System roles cannot be deleted or modified",
+    )
+
+    class Meta:
+        db_table = "org_roles"
+        verbose_name = "Org Role"
+        verbose_name_plural = "Org Roles"
+        ordering = ["role_name"]
+
+
 def org_logo_upload_location(instance, filename):
     return f"organizations/{instance.org_code}/logo/{filename}"
 
@@ -58,12 +83,13 @@ class Organization(GenericModel):
         help_text="Auto-generated e.g. ORG00123",
     )
     name = models.CharField(max_length=200)
-    slug = models.SlugField(
-        max_length=220,
-        unique=True,
+    org_phone_number = models.CharField(
+        max_length=20,
         blank=True,
-        help_text="Auto-generated from name",
+        null=True,
     )
+    website_url = models.URLField(max_length=600, blank=True, null=True)
+    social_media_links = models.JSONField(default=list, blank=True)
     logo = models.ImageField(
         upload_to=org_logo_upload_location,
         blank=True,
@@ -74,10 +100,6 @@ class Organization(GenericModel):
         on_delete=models.PROTECT,
         related_name="organizations_created",
     )
-    country = models.CharField(max_length=100, blank=True, null=True)
-    state = models.CharField(max_length=100, blank=True, null=True)
-    timezone = models.CharField(max_length=64, default="UTC")
-    currency = models.CharField(max_length=10, default="INR")
     onboarding_completed = models.BooleanField(default=False)
     onboarded_at = models.DateTimeField(blank=True, null=True)
 
@@ -91,69 +113,129 @@ class Organization(GenericModel):
         return f"{self.name} ({self.org_code})"
 
     def save(self, *args, **kwargs):
-        if not self.pk and not self.org_code:
-            self.org_code = "ORG" + str(generateRandomNumericCode(5)).zfill(5)
-            while Organization.objects.filter(org_code=self.org_code).exists():
+        if not self.pk:
+            if not self.org_code:
                 self.org_code = "ORG" + str(generateRandomNumericCode(5)).zfill(5)
 
-        if not self.slug:
-            base_slug = slugify(self.name)
-            self.slug = base_slug
-            counter = 1
-            while (
-                Organization.objects.filter(slug=self.slug).exclude(pk=self.pk).exists()
-            ):
-                self.slug = f"{base_slug}-{counter}"
-                counter += 1
+            while True:
+                try:
+                    super().save(*args, **kwargs)
+                    return
+                except IntegrityError:
+                    self.org_code = "ORG" + str(generateRandomNumericCode(5)).zfill(5)
 
         super().save(*args, **kwargs)
 
 
-class OrgRole(models.Model):
-
+class Country(models.Model):
     id = models.BigAutoField(primary_key=True)
-    organization = models.ForeignKey(
-        Organization,
-        on_delete=models.CASCADE,
-        related_name="org_roles",
+
+    iso2 = models.CharField(
+        max_length=2,
+        unique=True,
     )
-    role_name = models.CharField(max_length=50)
-    role_code = models.CharField(
-        max_length=20,
+
+    iso3 = models.CharField(
+        max_length=3,
+        unique=True,
         blank=True,
-        editable=False,
-        help_text="Auto-generated unique role code per org",
+        null=True,
     )
-    role_type = models.CharField(
-        max_length=20,
-        choices=OrgRoleTypeChoice.choices,
-        help_text="OWNER / ADMIN / WORKER / CUSTOM",
-    )
-    role_description = models.TextField(blank=True, null=True)
-    is_default = models.BooleanField(
-        default=False,
-        help_text="Default roles cannot be edited or deleted",
+
+    name = models.CharField(
+        max_length=150,
+        unique=True,
     )
 
     class Meta:
-        db_table = "org_roles"
-        verbose_name = "Org Role"
-        verbose_name_plural = "Org Roles"
-        unique_together = [["organization", "role_name"], ["organization", "role_code"]]
-        ordering = ["organization", "role_name"]
+        db_table = "countries"
+        ordering = ["name"]
+        verbose_name = "Country"
+        verbose_name_plural = "Countries"
 
     def __str__(self):
-        return f"{self.organization.name} - {self.role_name} ({self.role_code})"
+        return self.name
 
-    def save(self, *args, **kwargs):
-        if not self.pk and not self.role_code:
-            self.role_code = generateRandomCode(8).upper()
-            while OrgRole.objects.filter(
-                organization=self.organization,
-                role_code=self.role_code,
-            ).exists():
-                self.role_code = generateRandomCode(8).upper()
-        super().save(*args, **kwargs)
+
+class State(models.Model):
+    id = models.BigAutoField(primary_key=True)
+
+    country = models.ForeignKey(
+        Country,
+        on_delete=models.CASCADE,
+        related_name="states",
+    )
+
+    code = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+    )
+
+    name = models.CharField(
+        max_length=150,
+    )
+
+    class Meta:
+        db_table = "states"
+        ordering = ["country__name", "name"]
+        verbose_name = "State"
+        verbose_name_plural = "States"
+        unique_together = [
+            ("country", "code"),
+            ("country", "name"),
+        ]
+
+    def __str__(self):
+        return f"{self.name}, {self.country.name}"
+
+
+class Address(GenericModel):
+    id = models.BigAutoField(primary_key=True)
+
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="addresses",
+    )
+
+    address_source = models.CharField(
+        max_length=50,
+        choices=AddressSourceChoice.choices,
+        default=AddressSourceChoice.OTHER,
+        help_text="Type: COMPANY, ORGANIZATION USER, OWNER etc.",
+    )
+    country = models.ForeignKey(
+        Country,
+        on_delete=models.SET_NULL,
+        related_name="addresses",
+        blank=True,
+        null=True,
+    )
+
+    state = models.ForeignKey(
+        State,
+        on_delete=models.SET_NULL,
+        related_name="addresses",
+        blank=True,
+        null=True,
+    )
+    address_line_1 = models.CharField(max_length=255)
+    address_line_2 = models.CharField(max_length=255, blank=True, null=True)
+
+    postal_code = models.CharField(max_length=20, blank=True, null=True)
+    landmark = models.CharField(max_length=200, blank=True, null=True)
+
+    class Meta:
+        db_table = "addresses"
+        verbose_name = "Address"
+        verbose_name_plural = "Addresses"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        state = self.state.name if self.state else ""
+        country = self.country.name if self.country else ""
+        return f"{self.address_line_1}, {state}, {country}"
 
 
 class UserManager(BaseUserManager):
@@ -238,7 +320,7 @@ class User(AbstractUser):
     language_code = models.CharField(max_length=10, default="en")
 
     USERNAME_FIELD = "email"
-    REQUIRED_FIELDS = []  
+    REQUIRED_FIELDS = []
 
     objects = UserManager()
 
@@ -252,42 +334,43 @@ class User(AbstractUser):
         role = self.org_role.role_name if self.org_role else "No Role"
         return f"{self.email} ({role})"
 
-    from django.db import IntegrityError
-
     def save(self, *args, **kwargs):
-        if not self.username:
-            base_username = self.email.split("@")[0] if self.email else None
-            if base_username:
-                self.username = base_username
-                counter = 1
-                while (
-                    User.objects.filter(username=self.username)
-                    .exclude(pk=self.pk)
-                    .exists()
-                ):
-                    self.username = f"{base_username}{counter}"
-                    counter += 1
+        if not self.pk:
+            if not self.username:
+                base_username = self.email.split("@")[0] if self.email else None
+                if base_username:
+                    self.username = base_username
 
-        if not self.pk and not self.user_code:
-            while True:
+            if not self.user_code:
                 self.user_code = "USR" + generateRandomCode(8).upper()
+
+            while True:
                 try:
                     super().save(*args, **kwargs)
                     return
+
                 except IntegrityError:
-                    continue
+                    if User.objects.filter(user_code=self.user_code).exists():
+                        self.user_code = "USR" + generateRandomCode(8).upper()
+                        continue
+
+                    if User.objects.filter(username=self.username).exists():
+                        base_username = self.email.split("@")[0]
+                        counter = 1
+                        while User.objects.filter(
+                            username=f"{base_username}{counter}"
+                        ).exists():
+                            counter += 1
+                        self.username = f"{base_username}{counter}"
+                        continue
+
+                    raise
 
         super().save(*args, **kwargs)
 
     @property
     def is_org_owner(self):
         return self.org_role and self.org_role.role_type == OrgRoleTypeChoice.OWNER
-
-    @property
-    def display_name(self):
-        if hasattr(self, "org_user"):
-            return self.org_user.full_name
-        return self.email
 
 
 def org_user_profile_image_upload_location(instance, filename):
@@ -300,6 +383,7 @@ class OrgUser(GenericModel):
     org_user_code = models.CharField(
         max_length=25,
         editable=False,
+        unique=True,
         help_text="Auto-generated e.g. EMP1A2B3C4",
     )
     organization = models.ForeignKey(
@@ -307,6 +391,21 @@ class OrgUser(GenericModel):
         on_delete=models.CASCADE,
         related_name="org_users",
     )
+    address = models.OneToOneField(
+        Address,
+        on_delete=models.SET_NULL,
+        related_name="employee",
+        blank=True,
+        null=True,
+    )
+    org_role = models.ForeignKey(
+        OrgRole,
+        on_delete=models.SET_NULL,
+        related_name="org_users",
+        blank=True,
+        null=True,
+    )
+
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
@@ -352,21 +451,20 @@ class OrgUser(GenericModel):
         db_table = "org_users"
         verbose_name = "Org User"
         verbose_name_plural = "Org Users"
-        unique_together = [["organization", "org_user_code"]]
         ordering = ["organization", "first_name", "last_name"]
 
-
     def __str__(self):
-        return f"{self.full_name} ({self.org_user_code})"
+        return f"{self.user.email} ({self.org_user_code})"
 
     def save(self, *args, **kwargs):
         if not self.pk and not self.org_user_code:
-            self.org_user_code = "EMP" + generateRandomCode(6).upper()
-            while OrgUser.objects.filter(
-                organization=self.organization,
-                org_user_code=self.org_user_code,
-            ).exists():
+            while True:
                 self.org_user_code = "EMP" + generateRandomCode(6).upper()
+                try:
+                    super().save(*args, **kwargs)
+                    return
+                except IntegrityError:
+                    continue
         super().save(*args, **kwargs)
 
 
@@ -422,68 +520,36 @@ class Invitation(GenericModel):
         return f"Invite → {self.email} ({self.organization.name}, {self.status})"
 
     def save(self, *args, **kwargs):
-        if not self.pk and not self.token:
-            self.token = generateRandomCode(32)
-            while Invitation.objects.filter(token=self.token).exists():
-                self.token = generateRandomCode(32)
-        super().save(*args, **kwargs)
+        with transaction.atomic():
+            Organization.objects.select_for_update().get(pk=self.organization_id)
+
+            if self.status == InvitationStatusChoice.PENDING:
+                if (
+                    Invitation.objects.filter(
+                        organization=self.organization,
+                        email=self.email,
+                        status=InvitationStatusChoice.PENDING,
+                    )
+                    .exclude(pk=self.pk)
+                    .exists()
+                ):
+                    raise ValidationError(
+                        "A pending invitation already exists for this email in this organization."
+                    )
+
+            if not self.pk and not self.token:
+                while True:
+                    self.token = generateRandomCode(32)
+                    try:
+                        super().save(*args, **kwargs)
+                        return
+                    except IntegrityError:
+                        continue
+
+            super().save(*args, **kwargs)
 
     def is_valid(self):
         return (
             self.status == InvitationStatusChoice.PENDING
             and timezone.now() < self.expires_at
         )
-
-
-class PasswordResetToken(GenericModel):
-
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="password_reset_tokens",
-    )
-    token = models.CharField(max_length=64, unique=True, editable=False)
-    is_used = models.BooleanField(default=False)
-    used_at = models.DateTimeField(blank=True, null=True)
-    expires_at = models.DateTimeField()
-
-    class Meta:
-        db_table = "password_reset_tokens"
-        verbose_name = "Password Reset Token"
-        verbose_name_plural = "Password Reset Tokens"
-        ordering = ["-created_at"]
-
-    def __str__(self):
-        return f"Reset token for {self.user.email} ({'used' if self.is_used else 'active'})"
-
-    def save(self, *args, **kwargs):
-        if not self.pk and not self.token:
-            self.token = generateRandomCode(32)
-            while PasswordResetToken.objects.filter(token=self.token).exists():
-                self.token = generateRandomCode(32)
-        super().save(*args, **kwargs)
-
-    def is_valid(self):
-        return (not self.is_used) and timezone.now() < self.expires_at
-
-
-DEFAULT_ORG_ROLES = [
-    (OrgRoleTypeChoice.OWNER, "Organization Owner", True),
-    (OrgRoleTypeChoice.ADMIN, "Admin", True),
-    (OrgRoleTypeChoice.WORKER, "Worker", True),
-]
-
-
-def create_default_org_roles(organization):
-    roles = {}
-    for role_type, role_name, is_default in DEFAULT_ORG_ROLES:
-        role, _ = OrgRole.objects.get_or_create(
-            organization=organization,
-            role_type=role_type,
-            defaults={
-                "role_name": role_name,
-                "is_default": is_default,
-            },
-        )
-        roles[role_type] = role
-    return roles
