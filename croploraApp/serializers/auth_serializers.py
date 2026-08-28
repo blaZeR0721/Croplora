@@ -1,7 +1,7 @@
 import logging
 import re
 
-from croploraApp.models import PlatformRole, User, OrgRole
+from croploraApp.models import PlatformRole, User
 from croploraApp.views.utils.helpers import validate_password_strength
 from croploraApp.views.utils.redis_client import redis_client
 from croploraApp.views.utils.verification import (

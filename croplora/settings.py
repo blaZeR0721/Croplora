@@ -47,7 +47,6 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django_extensions",
     "rest_framework_simplejwt",
-    "cities_light",
     # Local App
     "croploraApp",
 ]

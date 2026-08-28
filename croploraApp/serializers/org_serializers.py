@@ -11,7 +11,7 @@ from .common_serializers import AddressSerializer
 logger = logging.getLogger("croplora")
 
 
-class OrgCreateSerializer(serializers.ModelSerializer):
+class OrgCreateUpdateSerializer(serializers.ModelSerializer):
     address = AddressSerializer()
 
     class Meta:
@@ -24,6 +24,29 @@ class OrgCreateSerializer(serializers.ModelSerializer):
             "social_media_links",
             "logo",
         )
+        extra_kwargs = {
+            "name": {
+                "required": True,
+                "allow_blank": False,
+                "trim_whitespace": True,
+            },
+            "address": {"required": True},
+            "org_phone_number": {"required": False, "allow_null": True, "allow_blank": True},
+            "website_url": {"required": False, "allow_null": True, "allow_blank": True},
+            "social_media_links": {"required": False},
+            "logo": {"required": False, "allow_null": True},
+        }
+
+    def validate_name(self, value):
+        value = value.strip()
+        queryset = Organization.objects.filter(name__iexact=value)
+        if self.instance is not None:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError(
+                "An organization with this name already exists."
+            )
+        return value
 
     @transaction.atomic
     def create(self, validated_data):
@@ -63,4 +86,28 @@ class OrgCreateSerializer(serializers.ModelSerializer):
             logger.exception("Failed to create organization.")
             raise serializers.ValidationError(
                 {"detail": "Unable to create organization. Please try again."}
+            )
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        address_data = validated_data.pop("address", None)
+        try:
+            for field, value in validated_data.items():
+                setattr(instance, field, value)
+            instance.save()
+
+            if address_data is not None:
+                address, _ = Address.objects.get_or_create(
+                    organization=instance,
+                    address_source=AddressSourceChoice.COMPANY,
+                )
+                for field, value in address_data.items():
+                    setattr(address, field, value)
+                address.save()
+
+            return instance
+        except Exception:
+            logger.exception("Failed to update organization.")
+            raise serializers.ValidationError(
+                {"detail": "Unable to update organization. Please try again."}
             )
