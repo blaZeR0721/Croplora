@@ -1,4 +1,5 @@
 from croploraApp.models import Address
+
 from rest_framework import serializers
 from croploraApp.models import State,Country
 
@@ -22,15 +23,14 @@ class AddressSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
-        country = attrs.get("country")
-        state = attrs.get("state")
+        country = attrs.get("country", self.instance.country if self.instance else None)
+        state = attrs.get("state", self.instance.state if self.instance else None)
 
         if state and not country:
             raise serializers.ValidationError(
                 {"country": "Country is required when state is provided."}
             )
 
-        # Ensure the state belongs to the selected country.
         if country and state and state.country_id != country.id:
             raise serializers.ValidationError(
                 {"state": "The selected state does not belong to the selected country."}

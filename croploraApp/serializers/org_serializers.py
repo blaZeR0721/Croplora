@@ -1,5 +1,6 @@
 import logging
 
+import phonenumbers
 from croploraApp.models import Address, Organization, OrgRole, OrgUser
 from croploraApp.views.utils.choicefields import (AddressSourceChoice,
                                                   OrgRoleTypeChoice)
@@ -31,22 +32,86 @@ class OrgCreateUpdateSerializer(serializers.ModelSerializer):
                 "trim_whitespace": True,
             },
             "address": {"required": True},
-            "org_phone_number": {"required": False, "allow_null": True, "allow_blank": True},
-            "website_url": {"required": False, "allow_null": True, "allow_blank": True},
+            "org_phone_number": {
+                "required": False,
+                "allow_null": True,
+                "allow_blank": True,
+            },
+            "website_url": {
+                "required": False,
+                "allow_null": True,
+                "allow_blank": True,
+            },
             "social_media_links": {"required": False},
             "logo": {"required": False, "allow_null": True},
         }
 
     def validate_name(self, value):
         value = value.strip()
+
         queryset = Organization.objects.filter(name__iexact=value)
+
         if self.instance is not None:
             queryset = queryset.exclude(pk=self.instance.pk)
+
         if queryset.exists():
             raise serializers.ValidationError(
                 "An organization with this name already exists."
             )
+
         return value
+
+    def validate(self, attrs):
+        phone_number = attrs.get("org_phone_number")
+
+        if not phone_number:
+            return attrs
+
+        address_data = attrs.get("address")
+
+        if address_data:
+            country = address_data.get("country")
+        elif self.instance:
+            address = self.instance.addresses.filter(
+                address_source=AddressSourceChoice.COMPANY
+            ).first()
+            country = address.country if address else None
+        else:
+            country = None
+
+        if not country:
+            raise serializers.ValidationError(
+                {
+                    "address": {
+                        "country": (
+                            "Country is required to validate "
+                            "the organization phone number."
+                        )
+                    }
+                }
+            )
+
+        try:
+            parsed_number = phonenumbers.parse(
+                phone_number,
+                country.iso2,
+            )
+        except phonenumbers.NumberParseException:
+            raise serializers.ValidationError(
+                {"org_phone_number": "Enter a valid phone number."}
+            )
+
+        if not phonenumbers.is_valid_number(parsed_number):
+            raise serializers.ValidationError(
+                {"org_phone_number": "Enter a valid phone number."}
+            )
+
+        attrs["org_phone_number"] = phonenumbers.format_number(
+            parsed_number,
+            phonenumbers.PhoneNumberFormat.E164,
+        )
+
+        return attrs
 
     @transaction.atomic
     def create(self, validated_data):
