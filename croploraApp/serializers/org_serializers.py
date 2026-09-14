@@ -13,13 +13,13 @@ logger = logging.getLogger("croplora")
 
 
 class OrgCreateUpdateSerializer(serializers.ModelSerializer):
-    address = AddressSerializer()
+    addresses = AddressSerializer()
 
     class Meta:
         model = Organization
         fields = (
             "name",
-            "address",
+            "addresses",
             "org_phone_number",
             "website_url",
             "social_media_links",
@@ -31,7 +31,7 @@ class OrgCreateUpdateSerializer(serializers.ModelSerializer):
                 "allow_blank": False,
                 "trim_whitespace": True,
             },
-            "address": {"required": True},
+            "addresses": {"required": True},
             "org_phone_number": {
                 "required": False,
                 "allow_null": True,
@@ -67,7 +67,7 @@ class OrgCreateUpdateSerializer(serializers.ModelSerializer):
         if not phone_number:
             return attrs
 
-        address_data = attrs.get("address")
+        address_data = attrs.get("addresses")
 
         if address_data:
             country = address_data.get("country")
@@ -82,7 +82,7 @@ class OrgCreateUpdateSerializer(serializers.ModelSerializer):
         if not country:
             raise serializers.ValidationError(
                 {
-                    "address": {
+                    "addresses": {
                         "country": (
                             "Country is required to validate "
                             "the organization phone number."
@@ -115,7 +115,7 @@ class OrgCreateUpdateSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
-        address_data = validated_data.pop("address")
+        address_data = validated_data.pop("addresses")
         user = self.context["request"].user
 
         try:
@@ -130,7 +130,7 @@ class OrgCreateUpdateSerializer(serializers.ModelSerializer):
             )
 
             owner_role = OrgRole.objects.get(
-                role_type=OrgRoleTypeChoice.OWNER,
+                role_code=OrgRoleTypeChoice.OWNER,
             )
 
             OrgUser.objects.create(
