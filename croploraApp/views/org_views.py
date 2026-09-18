@@ -1,6 +1,7 @@
 from rest_framework import status, viewsets
 from croploraApp.models import Organization
 from croploraApp.serializers.org_serializers import OrgCreateUpdateSerializer 
+from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
@@ -9,6 +10,7 @@ from typing import Dict, Type
 class OrgViewset(viewsets.ModelViewSet):
     queryset = Organization.objects.filter(is_deleted=False)
     renderer_classes=[JSONRenderer]
+    parser_classes=[JSONParser,MultiPartParser,FormParser]
     permission_classes = [IsAuthenticated]
 
     action_serializer_map: Dict[str, Type] = {
