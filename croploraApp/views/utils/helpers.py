@@ -1,7 +1,7 @@
 import re
 from django.core.exceptions import ValidationError
 from .choicefields import OrgRoleTypeChoice
-from croploraApp.models import OrgRole
+from croploraApp.models.auth import OrgRole
 
 
 def validate_password_strength(password):

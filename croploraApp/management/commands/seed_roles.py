@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from croploraApp.models import OrgRole, PlatformRole
+from croploraApp.models.auth import OrgRole, PlatformRole
 from croploraApp.views.utils.choicefields import (
     OrgRoleTypeChoice,
     PlatRoleTypeChoice,

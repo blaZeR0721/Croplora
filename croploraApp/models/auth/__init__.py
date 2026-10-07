@@ -1,24 +1,15 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.core.exceptions import ValidationError
-from django.core.validators import RegexValidator
 from django.db import IntegrityError, models, transaction
 from django.utils import timezone
-from django.utils.text import slugify
 
-from .views.utils.choicefields import (AddressSourceChoice,
-                                       InvitationStatusChoice,
-                                       OrgRoleTypeChoice, PlatRoleTypeChoice)
-from .views.utils.tokenGen import generateRandomCode, generateRandomNumericCode
-
-
-class GenericModel(models.Model):
-    is_active = models.BooleanField(default=True)
-    is_deleted = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        abstract = True
+from ..base import GenericModel
+from ...views.utils.choicefields import (
+    InvitationStatusChoice,
+    OrgRoleTypeChoice,
+    PlatRoleTypeChoice,
+)
+from ...views.utils.tokenGen import generateRandomCode
 
 
 class PlatformRole(models.Model):
@@ -47,16 +38,13 @@ class PlatformRole(models.Model):
 
 class OrgRole(models.Model):
     id = models.BigAutoField(primary_key=True)
-
     role_name = models.CharField(max_length=50, unique=True)
     role_code = models.CharField(
         max_length=20,
         choices=OrgRoleTypeChoice.choices,
         unique=True,
     )
-
     role_description = models.TextField(blank=True, null=True)
-
     is_system_role = models.BooleanField(
         default=True,
         help_text="System roles cannot be deleted or modified",
@@ -67,175 +55,6 @@ class OrgRole(models.Model):
         verbose_name = "Org Role"
         verbose_name_plural = "Org Roles"
         ordering = ["role_name"]
-
-
-def org_logo_upload_location(instance, filename):
-    return f"organizations/{instance.org_code}/logo/{filename}"
-
-
-class Organization(GenericModel):
-
-    id = models.BigAutoField(primary_key=True)
-    org_code = models.CharField(
-        max_length=20,
-        unique=True,
-        editable=False,
-        help_text="Auto-generated e.g. ORG00123",
-    )
-    name = models.CharField(max_length=200)
-    org_phone_number = models.CharField(
-        max_length=20,
-        blank=True,
-        null=True,
-    )
-    website_url = models.URLField(max_length=600, blank=True, null=True)
-    social_media_links = models.JSONField(default=list, blank=True)
-    logo = models.ImageField(
-        upload_to=org_logo_upload_location,
-        blank=True,
-        null=True,
-    )
-    created_by = models.ForeignKey(
-        "User",
-        on_delete=models.PROTECT,
-        related_name="organizations_created",
-    )
-    onboarding_completed = models.BooleanField(default=False)
-    onboarded_at = models.DateTimeField(blank=True, null=True)
-
-    class Meta:
-        db_table = "organizations"
-        verbose_name = "Organization"
-        verbose_name_plural = "Organizations"
-        ordering = ["name"]
-
-    def __str__(self):
-        return f"{self.name} ({self.org_code})"
-
-    def save(self, *args, **kwargs):
-        if not self.pk:
-            if not self.org_code:
-                self.org_code = "ORG" + str(generateRandomNumericCode(5)).zfill(5)
-
-            while True:
-                try:
-                    super().save(*args, **kwargs)
-                    return
-                except IntegrityError:
-                    self.org_code = "ORG" + str(generateRandomNumericCode(5)).zfill(5)
-
-        super().save(*args, **kwargs)
-
-
-class Country(models.Model):
-    id = models.BigAutoField(primary_key=True)
-
-    iso2 = models.CharField(
-        max_length=2,
-        unique=True,
-    )
-
-    iso3 = models.CharField(
-        max_length=3,
-        unique=True,
-        blank=True,
-        null=True,
-    )
-
-    name = models.CharField(
-        max_length=150,
-        unique=True,
-    )
-
-    class Meta:
-        db_table = "countries"
-        ordering = ["name"]
-        verbose_name = "Country"
-        verbose_name_plural = "Countries"
-
-    def __str__(self):
-        return self.name
-
-
-class State(models.Model):
-    id = models.BigAutoField(primary_key=True)
-
-    country = models.ForeignKey(
-        Country,
-        on_delete=models.CASCADE,
-        related_name="states",
-    )
-
-    code = models.CharField(
-        max_length=10,
-        blank=True,
-        null=True,
-    )
-
-    name = models.CharField(
-        max_length=150,
-    )
-
-    class Meta:
-        db_table = "states"
-        ordering = ["country__name", "name"]
-        verbose_name = "State"
-        verbose_name_plural = "States"
-        unique_together = [
-            ("country", "code"),
-            ("country", "name"),
-        ]
-
-    def __str__(self):
-        return f"{self.name}, {self.country.name}"
-
-
-class Address(GenericModel):
-    id = models.BigAutoField(primary_key=True)
-
-    organization = models.ForeignKey(
-        Organization,
-        on_delete=models.CASCADE,
-        related_name="addresses",
-    )
-
-    address_source = models.CharField(
-        max_length=50,
-        choices=AddressSourceChoice.choices,
-        default=AddressSourceChoice.OTHER,
-        help_text="Type: COMPANY, ORGANIZATION USER, OWNER etc.",
-    )
-    country = models.ForeignKey(
-        Country,
-        on_delete=models.SET_NULL,
-        related_name="addresses",
-        blank=True,
-        null=True,
-    )
-
-    state = models.ForeignKey(
-        State,
-        on_delete=models.SET_NULL,
-        related_name="addresses",
-        blank=True,
-        null=True,
-    )
-    address_line_1 = models.CharField(max_length=255)
-    address_line_2 = models.CharField(max_length=255, blank=True, null=True)
-
-    postal_code = models.CharField(max_length=20, blank=True, null=True)
-    landmark = models.CharField(max_length=200, blank=True, null=True)
-
-    class Meta:
-        db_table = "addresses"
-        verbose_name = "Address"
-        verbose_name_plural = "Addresses"
-        ordering = ["-created_at"]
-
-    def __str__(self):
-        state = self.state.name if self.state else ""
-        country = self.country.name if self.country else ""
-        return f"{self.address_line_1}, {state}, {country}"
 
 
 class UserManager(BaseUserManager):
@@ -269,7 +88,6 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractUser):
-
     username = models.CharField(
         max_length=150,
         unique=True,
@@ -284,7 +102,6 @@ class User(AbstractUser):
         help_text="Auto-generated e.g. USR1A2B3C4D",
     )
     email = models.EmailField(unique=True)
-
     platform_role = models.ForeignKey(
         PlatformRole,
         on_delete=models.SET_NULL,
@@ -292,15 +109,13 @@ class User(AbstractUser):
         blank=True,
         null=True,
     )
-
     organization = models.ForeignKey(
-        Organization,
+        "Organization",
         on_delete=models.SET_NULL,
         related_name="users",
         blank=True,
         null=True,
     )
-
     org_role = models.ForeignKey(
         OrgRole,
         on_delete=models.SET_NULL,
@@ -308,7 +123,6 @@ class User(AbstractUser):
         blank=True,
         null=True,
     )
-
     is_verified = models.BooleanField(default=False)
     email_verified_at = models.DateTimeField(blank=True, null=True)
     last_login_ip = models.GenericIPAddressField(blank=True, null=True)
@@ -321,7 +135,6 @@ class User(AbstractUser):
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
-
     objects = UserManager()
 
     class Meta:
@@ -348,7 +161,6 @@ class User(AbstractUser):
                 try:
                     super().save(*args, **kwargs)
                     return
-
                 except IntegrityError:
                     if User.objects.filter(user_code=self.user_code).exists():
                         self.user_code = "USR" + generateRandomCode(8).upper()
@@ -373,106 +185,10 @@ class User(AbstractUser):
         return self.org_role and self.org_role.role_type == OrgRoleTypeChoice.OWNER
 
 
-def org_user_profile_image_upload_location(instance, filename):
-    return f"organizations/{instance.organization.org_code}/users/{instance.org_user_code}/profile/{filename}"
-
-
-class OrgUser(GenericModel):
-
-    id = models.BigAutoField(primary_key=True)
-    org_user_code = models.CharField(
-        max_length=25,
-        editable=False,
-        unique=True,
-        help_text="Auto-generated e.g. EMP1A2B3C4",
-    )
-    organization = models.ForeignKey(
-        Organization,
-        on_delete=models.CASCADE,
-        related_name="org_users",
-    )
-    address = models.OneToOneField(
-        Address,
-        on_delete=models.SET_NULL,
-        related_name="employee",
-        blank=True,
-        null=True,
-    )
-    org_role = models.ForeignKey(
-        OrgRole,
-        on_delete=models.SET_NULL,
-        related_name="org_users",
-        blank=True,
-        null=True,
-    )
-
-    user = models.OneToOneField(
-        User,
-        on_delete=models.CASCADE,
-        related_name="org_user",
-    )
-    first_name = models.CharField(
-        max_length=100,
-        validators=[
-            RegexValidator(
-                r"^[a-zA-Z\s\-\.\']+$",
-                "Only letters, spaces, hyphens, dots, and apostrophes are allowed.",
-            )
-        ],
-    )
-    last_name = models.CharField(
-        max_length=100,
-        validators=[
-            RegexValidator(
-                r"^[a-zA-Z\s\-\.\']+$",
-                "Only letters, spaces, hyphens, dots, and apostrophes are allowed.",
-            )
-        ],
-    )
-    phone_number = models.CharField(
-        max_length=25,
-        blank=True,
-        null=True,
-        validators=[
-            RegexValidator(
-                r"^[0-9+\-(). ]+$",
-                "Only numeric characters and phone symbols are allowed.",
-            )
-        ],
-    )
-    profile_image = models.ImageField(
-        upload_to=org_user_profile_image_upload_location,
-        blank=True,
-        null=True,
-    )
-    date_of_birth = models.DateField(blank=True, null=True)
-
-    class Meta:
-        db_table = "org_users"
-        verbose_name = "Org User"
-        verbose_name_plural = "Org Users"
-        ordering = ["organization", "first_name", "last_name"]
-
-    def __str__(self):
-        return f"{self.user.email} ({self.org_user_code})"
-
-    def save(self, *args, **kwargs):
-        if not self.pk and not self.org_user_code:
-            while True:
-                self.org_user_code = "EMP" + generateRandomCode(6).upper()
-                try:
-                    super().save(*args, **kwargs)
-                    return
-                except IntegrityError:
-                    continue
-        super().save(*args, **kwargs)
-
-
 class Invitation(GenericModel):
-
     id = models.BigAutoField(primary_key=True)
     organization = models.ForeignKey(
-        Organization,
+        "Organization",
         on_delete=models.CASCADE,
         related_name="invitations",
     )
@@ -521,7 +237,12 @@ class Invitation(GenericModel):
 
     def save(self, *args, **kwargs):
         with transaction.atomic():
-            Organization.objects.select_for_update().get(pk=self.organization_id)
+            organization_model = self._meta.get_field(
+                "organization"
+            ).remote_field.model
+            organization_model.objects.select_for_update().get(
+                pk=self.organization_id
+            )
 
             if self.status == InvitationStatusChoice.PENDING:
                 if (

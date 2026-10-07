@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from croploraApp.models import Country
+from croploraApp.models.reference import Country
 from django.core.management.base import BaseCommand
 from django.db import transaction
 

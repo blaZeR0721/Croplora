@@ -1,7 +1,6 @@
-from croploraApp.models import Address
-
+from croploraApp.models.reference import Address, Country, State
 from rest_framework import serializers
-from croploraApp.models import State,Country
+
 
 class AddressSerializer(serializers.ModelSerializer):
     class Meta:
@@ -43,6 +42,7 @@ class CountrySerializer(serializers.ModelSerializer):
     class Meta:
         model = Country
         fields = ["id", "name", "iso2"]
+
 
 class StateSerializer(serializers.ModelSerializer):
     class Meta:

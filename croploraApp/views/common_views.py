@@ -1,6 +1,6 @@
 from rest_framework import mixins, viewsets
 from croploraApp.serializers.common_serializers import CountrySerializer,StateSerializer  
-from croploraApp.models import Country,State
+from croploraApp.models.reference import Country, State
 from rest_framework.permissions import IsAuthenticated
 
 class CountryViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
