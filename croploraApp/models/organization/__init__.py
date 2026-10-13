@@ -32,8 +32,6 @@ class Organization(GenericModel):
         on_delete=models.PROTECT,
         related_name="organizations_created",
     )
-    onboarding_completed = models.BooleanField(default=False)
-    onboarded_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         db_table = "organizations"

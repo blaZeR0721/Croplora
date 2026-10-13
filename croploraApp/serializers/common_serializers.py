@@ -19,16 +19,13 @@ class AddressSerializer(serializers.ModelSerializer):
                 "allow_blank": False,
                 "trim_whitespace": True,
             },
+            "country": {"required": True},
+            "state": {"required": True},
         }
 
     def validate(self, attrs):
         country = attrs.get("country", self.instance.country if self.instance else None)
         state = attrs.get("state", self.instance.state if self.instance else None)
-
-        if state and not country:
-            raise serializers.ValidationError(
-                {"country": "Country is required when state is provided."}
-            )
 
         if country and state and state.country_id != country.id:
             raise serializers.ValidationError(

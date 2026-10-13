@@ -19,6 +19,7 @@ class InvitationStatusChoice(models.TextChoices):
 class AddressSourceChoice(models.TextChoices):
     COMPANY = 'COMPANY', 'Company'
     USER = 'ORG_USER', 'Organization User'
+    OWNER = 'OWNER', 'Owner'
     FARM = 'FARM', 'Farm'
     OTHER = 'OTHER', 'Other'
 

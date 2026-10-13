@@ -59,17 +59,13 @@ class Address(GenericModel):
     )
     country = models.ForeignKey(
         Country,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         related_name="addresses",
-        blank=True,
-        null=True,
     )
     state = models.ForeignKey(
         State,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         related_name="addresses",
-        blank=True,
-        null=True,
     )
     address_line_1 = models.CharField(max_length=255)
     address_line_2 = models.CharField(max_length=255, blank=True, null=True)

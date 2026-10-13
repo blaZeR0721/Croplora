@@ -1,5 +1,6 @@
 import re
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from .choicefields import OrgRoleTypeChoice
 from croploraApp.models.auth import OrgRole
 
@@ -43,6 +44,7 @@ DEFAULT_ORG_ROLES = [
 ]
 
 
+@transaction.atomic
 def create_default_org_roles(organization):
     roles = {}
     for role_type, role_name, is_default in DEFAULT_ORG_ROLES:
@@ -56,6 +58,5 @@ def create_default_org_roles(organization):
         )
         roles[role_type] = role
     return roles
-
 
 
